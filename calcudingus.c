@@ -65,33 +65,57 @@
 #define POP 19
 //  14: SETFLAGS (sets flags from GR1)
 #define SETFLAGS 20
-//  15: LDIGR1 (loads GR1 immediately)
-#define LDIGR1 21
-//  17: LDIGR2 (loads GR2 immediately)
-#define LDIGR2 22
-//  18: LDIGR3 (loads GR3 immediately)
-#define LDIGR3 23
-//  19: CALL (calls a method at an address)
-#define CALL 24
-//  1a: RET (returns from a method)
-#define RET 25
-//  1b: JZ (jump to addr if IXR is 0)
-#define JZ 26
-//  1c: GR1TOIXR (GR1 -> IXR)
-#define GR1TOIXR 27
-//  1d: IXRTOGR1 (IXR -> GR1)
-#define IXRTOGR1 28
-//  1e: MEMTAG (tag (gr2)+ptr(gr1)=tagged pointer)
-#define MEMTAG 29
-//  1f: RAND (writes random 32bit garbage to GR1)
-#define RAND 30
-//  20: GETFLAGS (FLAGS -> GR1)
-#define GETFLAGS 31
-//  21: LFSH (GR1<<n)
-#define LFSH 32
-//  22: RGSH (GR1>>n)
-#define RGSH 33
-//  23: GETMEMST (PROGRAMEND -> GR1)
-#define GETMEMST 34
-//  24: BPTOGR1 (BP -> GR1)
-#define BPTOGR1 35
+//  15: LDIREG (loads into a register specified in 0x(op)Fxxxxx immediately)
+#define LDIREG 21
+//  16: CALL (calls a method at an address)
+#define CALL 22
+//  17: RET (returns from a method)
+#define RET 23
+//  18: JZ (jump to addr if IXR is 0)
+#define JZ 24
+//  19: GR1TOIXR (GR1 -> IXR)
+#define GR1TOIXR 25
+//  1a: IXRTOGR1 (IXR -> GR1)
+#define IXRTOGR1 26
+//  1b: MEMTAG (tag (gr2)+ptr(gr1)=tagged pointer)
+#define MEMTAG 27
+//  1c: RAND (writes random 32bit garbage to GR1)
+#define RAND 28
+//  1d: GETFLAGS (FLAGS -> GR1)
+#define GETFLAGS 29
+//  1e: LFSH (GR1<<n)
+#define LFSH 30
+//  1f: RGSH (GR1>>n)
+#define RGSH 31
+//  20: GETMEMST (PROGRAMEND -> GR1)
+#define GETMEMST 32
+//  21: BPTOGR1 (BP -> GR1)
+#define BPTOGR1 33
+
+enum State
+{
+    FETCH,
+    DECODE,
+    EXECUTE,
+    REGLOAD,
+    HALT
+};
+
+struct CPU
+{
+    int RAM[4096];
+    int TAG_MEM[4096];
+    int PC;         // Program Counter
+    int GR1;        // General Register
+    int GR2;        // General Register
+    int GR3;        // General Register
+    int MEMADDR;    // Memory Address
+    int IR;         // Instruction Register
+    int SP;         // Stack Pointer
+    int BP;         // Base Pointer
+    int IXR;        // Index Register
+    int PROGRAMEND; // Program End (also anchor for the heap)
+    int FLAGS;      // Flags
+    int CLKCNT;     // Clock Counter
+    enum State s;   // Machine state
+};
