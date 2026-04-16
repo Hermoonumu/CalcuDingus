@@ -65,24 +65,24 @@
 #define POP 19
 //  14: SETFLAGS (sets flags from 0x(op)Fxxxxx)
 #define SETFLAGS 20
-//  15: LDIREG (loads into a register specified in 0x(op)Fxxxxx immediately) [two-cycle operation]
-#define LDIREG 21
+//  15: GETFLAGS (FLAGS -> 0x(op)Fxxxxx)
+#define GETFLAGS 21
 //  16: CALL (calls a method at an address)
 #define CALL 22
 //  17: RET (returns from a method)
 #define RET 23
-//  18: JZ (jump to addr if IXR is 0)
+//  18: JZ (jump to addr in payload or to 0x(op)Fxxxxx if IXR is 0)
 #define JZ 24
 //  19: GR1TOIXR (GR1 -> IXR)
 #define GR1TOIXR 25
 //  1a: IXRTOGR1 (IXR -> GR1)
 #define IXRTOGR1 26
-//  1b: MEMTAG (tag (gr2)+ptr(gr1)=tagged pointer)
+//  1b: MEMTAG (tag (gr2)+ptr(gr1)=tagged pointer, writes it to MEMADDR as well as to 0x(op)Fxxxxx)
 #define MEMTAG 27
 //  1c: RAND (writes random 32bit garbage to 0x(op)Fxxxxx)
 #define RAND 28
-//  1d: GETFLAGS (FLAGS -> 0x(op)Fxxxxx)
-#define GETFLAGS 29
+//  1d: LDIREG (loads into a register specified in 0x(op)Fxxxxx immediately) [two-cycle operation]
+#define LDIREG 29
 //  1e: LFSH (0x(op)Fxxxxx<<n)
 #define LFSH 30
 //  1f: RGSH (0x(op)Fxxxxx>>n)
@@ -91,6 +91,14 @@
 #define GETMEMST 32
 //  21: BPTOREG (BP -> 0x(op)Fxxxxx)
 #define BPTOREG 33
+
+// FLAGS
+//  00000000 -- nothing extraordinary
+//  00000001 -- Pending console output
+//  00000002 -- Popping attempt failed (stack empty)
+//  00000004 -- Tried overwriting the program
+//  00000008 -- MTE violation
+//  00000010 -- Performing a register immediate load
 
 enum State
 {
@@ -122,23 +130,425 @@ struct CPU
     // Now (usually) private CPU stuff
     int Operand1;
     int Operand2;
+    int Payload;
     int DestReg;
 };
 
 void FetchInstruction(struct CPU *core)
 {
+    core->IR = core->RAM[core->PC];
+    core->PC++;
 }
 
 void DecodeInstruction(struct CPU *core)
 {
+    if ((core->FLAGS & 0x10) == 0x0)
+    {
+        core->Operand1 = (core->GR1);
+        core->Operand2 = (core->GR2);
+        core->DestReg = ((core->IR) & 0x00F00000) >> 20;
+        core->Payload = (core->IR) & 0x000FFFFF;
+        core->IR = ((core->IR) & 0xFF000000) >> 24;
+    }
+    else
+    {
+        core->Payload = core->IR;
+        core->IR = LDIREG;
+    }
+}
+
+int *RegisterSelector(int reg, struct CPU *core)
+{
+    switch (reg)
+    {
+    case 1:
+        return &core->GR1;
+    case 2:
+        return &core->GR2;
+    case 3:
+        return &core->GR3;
+    case 4:
+        return &core->MEMADDR;
+    case 5:
+        return &core->IXR;
+    case 6:
+        return &core->BP;
+    case 7:
+        return &core->PROGRAMEND;
+    case 8:
+        return &core->FLAGS;
+    case 9:
+        return &core->CLKCNT;
+    default:
+        return 0;
+    }
 }
 
 void ExecuteInstruction(struct CPU *core)
 {
-}
-
-void LoadRegister(struct CPU *core)
-{
+    switch (core->IR)
+    {
+    case NOP:
+        break;
+    case JMP:
+    {
+        int *JmpTo = RegisterSelector(core->DestReg, core);
+        if (JmpTo == 0)
+        {
+            core->PC = core->Payload;
+            break;
+        }
+        core->PC = *JmpTo;
+        break;
+    }
+    case ADD:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 + core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 + core->Operand2;
+        break;
+    }
+    case SUB:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 - core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 - core->Operand2;
+        break;
+    }
+    case MUL:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 * core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 * core->Operand2;
+        break;
+    }
+    case DIV:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 / core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 / core->Operand2;
+        break;
+    }
+    case MOD:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 % core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 % core->Operand2;
+        break;
+    }
+    case AND:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 & core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 & core->Operand2;
+        break;
+    }
+    case OR:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 | core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 | core->Operand2;
+        break;
+    }
+    case XOR:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 ^ core->Operand2;
+            break;
+        }
+        *Dest = core->Operand1 ^ core->Operand2;
+        break;
+    }
+    case HLT:
+        core->s = HALT;
+        break;
+    case RAMLOAD:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
+            core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
+        {
+            core->FLAGS = core->FLAGS | 0x00000008;
+            break;
+        }
+        if (Dest == 0)
+        {
+            core->GR1 = core->RAM[core->MEMADDR & 0x00000FFF];
+            break;
+        }
+        *Dest = core->RAM[core->MEMADDR & 0x00000FFF];
+        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        break;
+    }
+    case RAMSTORE:
+    {
+        int *Src = RegisterSelector(core->DestReg, core);
+        if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
+            core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
+        {
+            core->FLAGS = core->FLAGS | 0x00000008;
+            break;
+        }
+        if (core->MEMADDR <= core->PROGRAMEND)
+        {
+            core->FLAGS = core->FLAGS | 0x00000004;
+            break;
+        }
+        if (Src == 0)
+        {
+            core->RAM[core->MEMADDR & 0x00000FFF] = core->GR1;
+            break;
+        }
+        core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
+        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        core->FLAGS = core->FLAGS & 0xFFFFFFFB;
+        break;
+    }
+    case MOVTOGR2:
+    {
+        core->GR2 = core->GR1;
+        break;
+    }
+    case MOVTOGR3:
+    {
+        core->GR3 = core->GR1;
+        break;
+    }
+    case GR2TOGR1:
+    {
+        core->GR1 = core->GR2;
+        break;
+    }
+    case GR3TOGR1:
+    {
+        core->GR1 = core->GR3;
+        break;
+    }
+    case WRTOMEMADDR:
+    {
+        int *Src = RegisterSelector(core->DestReg, core);
+        if (Src == 0)
+        {
+            core->MEMADDR = core->Payload;
+            break;
+        }
+        core->MEMADDR = *Src;
+        break;
+    }
+    case PUSH:
+    {
+        core->FLAGS = core->FLAGS & 0xFFFFFFFD;
+        int *Src = RegisterSelector(core->DestReg, core);
+        if (Src == 0)
+        {
+            core->RAM[core->SP] = core->GR1;
+            core->SP--;
+            break;
+        }
+        core->RAM[core->SP] = *Src;
+        core->SP--;
+        break;
+    }
+    case POP:
+    {
+        core->SP++;
+        if (core->SP == core->BP + 1)
+        {
+            core->FLAGS = core->FLAGS | 0x00000002;
+            core->SP--;
+            break;
+        }
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->RAM[core->SP];
+            break;
+        }
+        *Dest = core->RAM[core->SP];
+        break;
+    }
+    case SETFLAGS:
+    {
+        int *Src = RegisterSelector(core->DestReg, core);
+        if (Src == 0)
+        {
+            core->FLAGS = core->GR1;
+            break;
+        }
+        core->FLAGS = *Src;
+        break;
+    }
+    case LDIREG:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (!Dest)
+        {
+            Dest = &core->GR1;
+        }
+        if (core->FLAGS & 0x10)
+        {
+            *Dest = core->Payload;
+            core->FLAGS = core->FLAGS & 0xFFFFFFEF;
+        }
+        else
+        {
+            core->FLAGS = core->FLAGS | 0x10;
+        }
+        break;
+    }
+    case CALL:
+    {
+        core->RAM[core->SP] = core->PC;
+        core->SP--;
+        core->RAM[core->SP] = core->BP;
+        core->SP--;
+        core->BP = core->SP;
+        core->PC = core->Payload;
+        break;
+    }
+    case RET:
+    {
+        core->BP = core->SP;
+        core->BP = core->RAM[core->SP + 1];
+        core->PC = core->RAM[core->SP + 2];
+        break;
+    }
+    case JZ:
+    {
+        if (core->IXR == 0)
+        {
+            int *Dest = RegisterSelector(core->DestReg, core);
+            if (Dest == 0)
+            {
+                core->PC = core->Payload;
+                break;
+            }
+            core->PC = *Dest;
+            break;
+        }
+        break;
+    }
+    case GR1TOIXR:
+    {
+        core->IXR = core->GR1;
+        break;
+    }
+    case IXRTOGR1:
+    {
+        core->GR1 = core->IXR;
+        break;
+    }
+    case MEMTAG:
+    {
+        int TaggedPointer = (core->Operand1 & 0x00000FFF) | (core->Operand2 & 0x000000FF) << 24;
+        core->MEMADDR = TaggedPointer;
+        int *Src = RegisterSelector(core->DestReg, core);
+        if (Src)
+        {
+            *Src = TaggedPointer;
+        }
+        core->TAG_MEM[TaggedPointer & 0x00000FFF] = TaggedPointer >> 24;
+        break;
+    }
+    case RAND:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = rand();
+            break;
+        }
+        *Dest = rand();
+        break;
+    }
+    case GETFLAGS:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->FLAGS;
+            break;
+        }
+        *Dest = core->FLAGS;
+        break;
+    }
+    case LFSH:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 << core->Payload;
+            break;
+        }
+        *Dest = *Dest << core->Payload;
+        break;
+    }
+    case RGSH:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->Operand1 >> core->Payload;
+            break;
+        }
+        *Dest = *Dest >> core->Payload;
+        break;
+    }
+    case GETMEMST:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->PROGRAMEND;
+            break;
+        }
+        *Dest = core->PROGRAMEND;
+        break;
+    }
+    case BPTOREG:
+    {
+        int *Dest = RegisterSelector(core->DestReg, core);
+        if (Dest == 0)
+        {
+            core->GR1 = core->BP;
+            break;
+        }
+        *Dest = core->BP;
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 int main()
@@ -164,10 +574,6 @@ int main()
             break;
         case EXECUTE:
             ExecuteInstruction(&core);
-            core.s = FETCH;
-            break;
-        case REGLOAD:
-            LoadRegister(&core);
             core.s = FETCH;
             break;
         }
