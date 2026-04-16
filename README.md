@@ -20,6 +20,10 @@
 - PROGRAMEND: Segmentation of TEXT and DATA
 - Misc: FLAGS (System State) and CLKCNT (Clock Counter)
 
+# MMIO
+
+- RAM address 4095 accepts data, which will be displayed in the terminal on the same cycle.
+
 # Notable features
 
 - MTE: Hardware endorsed memory integrity
