@@ -1,4 +1,6 @@
-#include <programs.c>
+#include "programs.c"
+#include <stdio.h>
+#include <stdlib.h>
 // Structure:
 // A core featuring has three general registers: GR1, GR2 and GR3
 
@@ -187,6 +189,19 @@ unsigned int *RegisterSelector(unsigned int reg, struct CPU *core)
     }
 }
 
+void LoadProgram(int PROGRAM[], int size, struct CPU *core)
+{
+    for (int i = 0; i < size; i++)
+    {
+        if (i >= 4096)
+        {
+            core->s = HALT;
+            break;
+        }
+        core->RAM[i] = PROGRAM[i];
+    }
+}
+
 void ExecuteInstruction(struct CPU *core)
 {
     switch (core->IR)
@@ -334,6 +349,10 @@ void ExecuteInstruction(struct CPU *core)
             core->FLAGS = core->FLAGS | 0x00000008;
             break;
         }
+        if (core->MEMADDR & 0x00000FFF == 4095)
+        {
+            core->FLAGS = core->FLAGS | 0x00000001;
+        }
         if (core->MEMADDR & 0x00000FFF <= core->PROGRAMEND)
         {
             core->FLAGS = core->FLAGS | 0x00000004;
@@ -342,11 +361,6 @@ void ExecuteInstruction(struct CPU *core)
         if (Src == 0)
         {
             core->RAM[core->MEMADDR & 0x00000FFF] = core->GR1;
-            break;
-        }
-        if (core->MEMADDR & 0x00000FFF == 4095)
-        {
-            core->FLAGS = core->FLAGS | 0x00000001;
             break;
         }
         core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
@@ -579,7 +593,7 @@ void ExecuteInstruction(struct CPU *core)
     }
 }
 
-unsigned int main()
+int main()
 {
     struct CPU core = {0}; // Our core
     core.s = FETCH;        // We manually set the state
@@ -588,6 +602,7 @@ unsigned int main()
     core.BP = 4090;
     core.SP = 4090;
 
+    LoadProgram(TEST_A, sizeof(TEST_A) / sizeof(int), &core);
     while (core.s != HALT)
     {
         switch (core.s)
@@ -611,6 +626,7 @@ unsigned int main()
         if ((core.FLAGS & 0x1) == 1)
         {
             putchar(core.RAM[4095]);
+            putchar('\n');
             core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
