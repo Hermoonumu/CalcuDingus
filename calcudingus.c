@@ -1,3 +1,4 @@
+#include <programs.c>
 // Structure:
 // A core featuring has three general registers: GR1, GR2 and GR3
 
@@ -100,6 +101,7 @@
 //  00000008 -- MTE violation
 //  00000010 -- Performing a register immediate load
 //  00000020 -- Division by zero
+//  00000040 -- Cannot return from the base frame
 
 enum State
 {
@@ -342,6 +344,11 @@ void ExecuteInstruction(struct CPU *core)
             core->RAM[core->MEMADDR & 0x00000FFF] = core->GR1;
             break;
         }
+        if (core->MEMADDR & 0x00000FFF == 4095)
+        {
+            core->FLAGS = core->FLAGS | 0x00000001;
+            break;
+        }
         core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
         core->FLAGS = core->FLAGS & 0xFFFFFFF7;
         core->FLAGS = core->FLAGS & 0xFFFFFFFB;
@@ -390,6 +397,7 @@ void ExecuteInstruction(struct CPU *core)
         }
         core->RAM[core->SP] = *Src;
         core->SP--;
+        core->FLAGS = core->FLAGS & 0xFFFFFFBF;
         break;
     }
     case POP:
@@ -447,10 +455,16 @@ void ExecuteInstruction(struct CPU *core)
         core->SP--;
         core->BP = core->SP;
         core->PC = core->Payload;
+        core->FLAGS = core->FLAGS & 0xFFFFFFBF;
         break;
     }
     case RET:
     {
+        if (core->BP <= 4090)
+        {
+            core->FLAGS = core->FLAGS | 0x00000040;
+            break;
+        }
         core->SP = core->BP;
         core->BP = core->RAM[core->SP + 1];
         core->PC = core->RAM[core->SP + 2];
@@ -593,6 +607,11 @@ unsigned int main()
                 core.s = FETCH;
             }
             break;
+        }
+        if ((core.FLAGS & 0x1) == 1)
+        {
+            putchar(core.RAM[4095]);
+            core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
     }
