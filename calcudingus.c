@@ -28,7 +28,7 @@
 //  OPCODES
 //  0: NOP (does nothing)
 #define NOP 0
-//  1: JMP (sets PC to the thing in 0x(op)Fxxxxx)
+//  1: JMP (sets PC to the thing in 0x(op)Fxxxxx or in payload)
 #define JMP 1
 //  2: ADD (sums GR1 with GR2 and stores in 0x(op)Fxxxxx)
 #define ADD 2
@@ -60,7 +60,7 @@
 #define GR2TOGR1 15
 //  10: GR3TOGR1 (GR3 -> GR1)
 #define GR3TOGR1 16
-//  11: WRTOMEMADDR (0x(op)Fxxxxx -> MEMADDR)
+//  11: WRTOMEMADDR (0x(op)Fxxxxx or payload -> MEMADDR)
 #define WRTOMEMADDR 17
 //  12: PUSH (pushes to stack from the register specified in 0x(op)Fxxxxx)
 #define PUSH 18
@@ -70,7 +70,7 @@
 #define SETFLAGS 20
 //  15: GETFLAGS (FLAGS -> 0x(op)Fxxxxx)
 #define GETFLAGS 21
-//  16: CALL (calls a method at an address)
+//  16: CALL (calls a method at an address in payload or at 0x(op)Fxxxxx)
 #define CALL 22
 //  17: RET (returns from a method)
 #define RET 23
@@ -360,7 +360,7 @@ void ExecuteInstruction(struct CPU *core)
         }
         if (Src == 0)
         {
-            core->RAM[core->MEMADDR & 0x00000FFF] = core->GR1;
+            core->RAM[core->MEMADDR & 0x00000FFF] = core->Payload;
             break;
         }
         core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
@@ -463,18 +463,26 @@ void ExecuteInstruction(struct CPU *core)
     }
     case CALL:
     {
+        int *Dest = RegisterSelector(core->DestReg, core);
         core->RAM[core->SP] = core->PC;
         core->SP--;
         core->RAM[core->SP] = core->BP;
         core->SP--;
         core->BP = core->SP;
-        core->PC = core->Payload;
+        if (!Dest)
+        {
+            core->PC = core->Payload;
+        }
+        else
+        {
+            core->PC = *Dest;
+        }
         core->FLAGS = core->FLAGS & 0xFFFFFFBF;
         break;
     }
     case RET:
     {
-        if (core->BP <= 4090)
+        if (core->BP > 4090)
         {
             core->FLAGS = core->FLAGS | 0x00000040;
             break;
@@ -602,7 +610,7 @@ int main()
     core.BP = 4090;
     core.SP = 4090;
 
-    LoadProgram(TEST_A, sizeof(TEST_A) / sizeof(int), &core);
+    LoadProgram(A_THROUGH_Z, sizeof(A_THROUGH_Z) / sizeof(int), &core);
     while (core.s != HALT)
     {
         switch (core.s)
@@ -626,11 +634,18 @@ int main()
         if ((core.FLAGS & 0x1) == 1)
         {
             putchar(core.RAM[4095]);
-            putchar('\n');
             core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
+        if (core.CLKCNT >= 2000)
+        {
+            printf("The CPU overheated and exploded. You're dead now.");
+            core.s = HALT;
+        }
+        /*printf("PC: %04d | OP: 0x%02X | GR1: %8d | GR2: %8d | GR3: %8d | IXR: %4d | SP: %4d | BP: %4d | FLAGS: 0x%08X | MEMADDR: %04d\n",
+               core.PC, (core.IR >> 24) & 0xFF, core.GR1, core.GR2, core.GR3, core.IXR, core.SP, core.BP, core.FLAGS, core.MEMADDR);
+    */
     }
-
+    putchar('\n');
     return 0;
 }

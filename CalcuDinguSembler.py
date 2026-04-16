@@ -35,9 +35,84 @@ OPCODES = {
     "BPTOREG": 33
 }
 
+BARE_OPCODES = {
+    "NOP",
+    "HLT",
+    "MOVTOGR2",
+    "MOVTOGR3",
+    "GR2TOGR1",
+    "GR3TOGR1",
+    "RET",
+    "GR1TOIXR",
+    "IXRTOGR1"
+}
+
+REG_OPCODES={
+    "ADD",
+    "SUB",
+    "MUL",
+    "DIV",
+    "MOD",
+    "AND",
+    "OR",
+    "XOR",
+    "RAMLOAD",
+    "RAMSTORE",
+    "PUSH",
+    "POP",
+    "GETFLAGS",
+    "SETFLAGS",
+    "MEMTAG",
+    "RAND",
+    "LDIREG",
+    "GETMEMST",
+    "BPTOREG"
+}
+
+STACKED_OPCODES={
+    "JMP",
+    "CALL",
+    "JZ",
+    "WRTOMEMADDR",
+    "LFSH",
+    "RGSH"
+}
+
+TWO_CYCLE_INSTRUCTIONS = {
+    "LDIREG"
+}
+
+# Opcodes that do not accept payload nor do they accept register:
+#NOP, HLT, MOVTOGR2, MOVTOGR3, GR2TOGR1, GR3TOGR1, RET, GR1TOIXR, IXRTOGR1
+
+
+#Opcodes that take only register
+#ADD, SUB, MUL, DIV, MOD, AND, OR, XOR, RAMLOAD, RAMSTORE,
+#PUSH, POP, GETFLAGS, SETFLAGS, MEMTAG, RAND,
+#LDIREG, GETMEMST, BPTOREG
+
+#Opcodes that take all three
+#JMP, CALL, JZ, WRTOMEMADDR, LFSH, RGSH 0xOPR00000
+
 output_file = open("machine.ohcp", "w")
 print("What are we translating to assembler: ")
 name = input()
+two_cycle_instr_prog_offset_ctr=0
+instr_ctr=0
+two_cycle_instr_prog_offset={}
+with open(name) as f:
+    for line in f:
+        line = line.split('//')[0].strip()
+        if not line: continue
+
+        mnemonic = line.split(' ')[0]
+        two_cycle_instr_prog_offset[instr_ctr]=two_cycle_instr_prog_offset_ctr
+        if mnemonic in TWO_CYCLE_INSTRUCTIONS:
+            two_cycle_instr_prog_offset_ctr+=1
+        instr_ctr+=1
+print(two_cycle_instr_prog_offset)
+
+            
 with open(name) as f:
     for line in f:
         line = line.split('//')[0].strip()
@@ -48,18 +123,25 @@ with open(name) as f:
         
         if mnemonic in OPCODES:
             instruction = OPCODES[mnemonic] << 24
+            if mnemonic in BARE_OPCODES:
+                pass
             
-            
-            
-            if len(parts) == 3:
-                temp1 = int(parts[1], 0) << 12
-                temp2 = int(parts[2], 0)
-                instruction |= (temp1 | temp2)
+            if mnemonic in REG_OPCODES:
+                instruction |= int(parts[1], 0)<<20
+                if mnemonic in TWO_CYCLE_INSTRUCTIONS:
+                    output_file.write(f"{instruction},\n")
+                    output_file.write(f"{int(parts[2])},\n")
+                    continue
 
+            if mnemonic in STACKED_OPCODES:
+                instruction |= int(parts[1], 0)<<20
+                if mnemonic in {"CALL", "JZ", "JMP"}:
+                    instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)]
+                else:
+                    instruction |= int(parts[2], 0)
+                
             # Write as a decimal integer followed by a newline
-            output_file.write(f"{instruction}\n")
-        if (mnemonic.isdigit()):
-            output_file.write(f"{int(mnemonic)}\n")
-
+            output_file.write(f"{instruction},\n")
+            
 
 output_file.close()
