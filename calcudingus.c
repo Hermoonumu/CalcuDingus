@@ -99,6 +99,7 @@
 //  00000004 -- Tried overwriting the program
 //  00000008 -- MTE violation
 //  00000010 -- Performing a register immediate load
+//  00000020 -- Division by zero
 
 enum State
 {
@@ -111,27 +112,27 @@ enum State
 
 struct CPU
 {
-    int RAM[4096];
-    int TAG_MEM[4096];
-    int PC;         // Program Counter
-    int GR1;        // General Register
-    int GR2;        // General Register
-    int GR3;        // General Register
-    int MEMADDR;    // Memory Address
-    int IR;         // Instruction Register
-    int SP;         // Stack Pointer
-    int BP;         // Base Pointer
-    int IXR;        // Index Register
-    int PROGRAMEND; // Program End (also anchor for the heap)
-    int FLAGS;      // Flags
-    int CLKCNT;     // Clock Counter
-    enum State s;   // Machine state
+    unsigned int RAM[4096];
+    unsigned int TAG_MEM[4096];
+    unsigned int PC;         // Program Counter
+    unsigned int GR1;        // General Register
+    unsigned int GR2;        // General Register
+    unsigned int GR3;        // General Register
+    unsigned int MEMADDR;    // Memory Address
+    unsigned int IR;         // Instruction Register
+    unsigned int SP;         // Stack Pointer
+    unsigned int BP;         // Base Pointer
+    unsigned int IXR;        // Index Register
+    unsigned int PROGRAMEND; // Program End (also anchor for the heap)
+    unsigned int FLAGS;      // Flags
+    unsigned int CLKCNT;     // Clock Counter
+    enum State s;            // Machine state
 
     // Now (usually) private CPU stuff
-    int Operand1;
-    int Operand2;
-    int Payload;
-    int DestReg;
+    unsigned int Operand1;
+    unsigned int Operand2;
+    unsigned int Payload;
+    unsigned int DestReg;
 };
 
 void FetchInstruction(struct CPU *core)
@@ -157,7 +158,7 @@ void DecodeInstruction(struct CPU *core)
     }
 }
 
-int *RegisterSelector(int reg, struct CPU *core)
+unsigned int *RegisterSelector(unsigned int reg, struct CPU *core)
 {
     switch (reg)
     {
@@ -192,7 +193,7 @@ void ExecuteInstruction(struct CPU *core)
         break;
     case JMP:
     {
-        int *JmpTo = RegisterSelector(core->DestReg, core);
+        unsigned int *JmpTo = RegisterSelector(core->DestReg, core);
         if (JmpTo == 0)
         {
             core->PC = core->Payload;
@@ -203,7 +204,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case ADD:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 + core->Operand2;
@@ -214,7 +215,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case SUB:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 - core->Operand2;
@@ -225,7 +226,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case MUL:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 * core->Operand2;
@@ -236,29 +237,41 @@ void ExecuteInstruction(struct CPU *core)
     }
     case DIV:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        if (core->Operand2 == 0)
+        {
+            core->FLAGS = core->FLAGS | 0x00000020;
+            break;
+        }
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 / core->Operand2;
             break;
         }
         *Dest = core->Operand1 / core->Operand2;
+        core->FLAGS = core->FLAGS & 0xFFFFFFDF;
         break;
     }
     case MOD:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        if (core->Operand2 == 0)
+        {
+            core->FLAGS = core->FLAGS | 0x00000020;
+            break;
+        }
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 % core->Operand2;
             break;
         }
         *Dest = core->Operand1 % core->Operand2;
+        core->FLAGS = core->FLAGS & 0xFFFFFFDF;
         break;
     }
     case AND:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 & core->Operand2;
@@ -269,7 +282,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case OR:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 | core->Operand2;
@@ -280,7 +293,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case XOR:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 ^ core->Operand2;
@@ -294,7 +307,7 @@ void ExecuteInstruction(struct CPU *core)
         break;
     case RAMLOAD:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
             core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
         {
@@ -312,14 +325,14 @@ void ExecuteInstruction(struct CPU *core)
     }
     case RAMSTORE:
     {
-        int *Src = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->DestReg, core);
         if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
             core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
         {
             core->FLAGS = core->FLAGS | 0x00000008;
             break;
         }
-        if (core->MEMADDR <= core->PROGRAMEND)
+        if (core->MEMADDR & 0x00000FFF <= core->PROGRAMEND)
         {
             core->FLAGS = core->FLAGS | 0x00000004;
             break;
@@ -356,7 +369,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case WRTOMEMADDR:
     {
-        int *Src = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->DestReg, core);
         if (Src == 0)
         {
             core->MEMADDR = core->Payload;
@@ -368,7 +381,7 @@ void ExecuteInstruction(struct CPU *core)
     case PUSH:
     {
         core->FLAGS = core->FLAGS & 0xFFFFFFFD;
-        int *Src = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->DestReg, core);
         if (Src == 0)
         {
             core->RAM[core->SP] = core->GR1;
@@ -388,7 +401,7 @@ void ExecuteInstruction(struct CPU *core)
             core->SP--;
             break;
         }
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->RAM[core->SP];
@@ -399,7 +412,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case SETFLAGS:
     {
-        int *Src = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->DestReg, core);
         if (Src == 0)
         {
             core->FLAGS = core->GR1;
@@ -410,7 +423,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case LDIREG:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (!Dest)
         {
             Dest = &core->GR1;
@@ -438,16 +451,17 @@ void ExecuteInstruction(struct CPU *core)
     }
     case RET:
     {
-        core->BP = core->SP;
+        core->SP = core->BP;
         core->BP = core->RAM[core->SP + 1];
         core->PC = core->RAM[core->SP + 2];
+        core->SP += 2;
         break;
     }
     case JZ:
     {
         if (core->IXR == 0)
         {
-            int *Dest = RegisterSelector(core->DestReg, core);
+            unsigned int *Dest = RegisterSelector(core->DestReg, core);
             if (Dest == 0)
             {
                 core->PC = core->Payload;
@@ -470,9 +484,9 @@ void ExecuteInstruction(struct CPU *core)
     }
     case MEMTAG:
     {
-        int TaggedPointer = (core->Operand1 & 0x00000FFF) | (core->Operand2 & 0x000000FF) << 24;
+        unsigned int TaggedPointer = (core->Operand1 & 0x00000FFF) | (core->Operand2 & 0x000000FF) << 24;
         core->MEMADDR = TaggedPointer;
-        int *Src = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->DestReg, core);
         if (Src)
         {
             *Src = TaggedPointer;
@@ -482,7 +496,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case RAND:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = rand();
@@ -493,7 +507,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case GETFLAGS:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->FLAGS;
@@ -504,7 +518,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case LFSH:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 << core->Payload;
@@ -515,7 +529,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case RGSH:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->Operand1 >> core->Payload;
@@ -526,7 +540,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case GETMEMST:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->PROGRAMEND;
@@ -537,7 +551,7 @@ void ExecuteInstruction(struct CPU *core)
     }
     case BPTOREG:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
             core->GR1 = core->BP;
@@ -551,7 +565,7 @@ void ExecuteInstruction(struct CPU *core)
     }
 }
 
-int main()
+unsigned int main()
 {
     struct CPU core = {0}; // Our core
     core.s = FETCH;        // We manually set the state
@@ -574,7 +588,10 @@ int main()
             break;
         case EXECUTE:
             ExecuteInstruction(&core);
-            core.s = FETCH;
+            if (core.s != HALT)
+            {
+                core.s = FETCH;
+            }
             break;
         }
         core.CLKCNT++;
