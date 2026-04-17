@@ -1,0 +1,76 @@
+const char *GetOpcodeName(int opcode)
+{
+    switch (opcode)
+    {
+    case 0:
+        return "NOP";
+    case 1:
+        return "JMP";
+    case 2:
+        return "ADD";
+    case 3:
+        return "SUB";
+    case 4:
+        return "MUL";
+    case 5:
+        return "DIV";
+    case 6:
+        return "MOD";
+    case 7:
+        return "AND";
+    case 8:
+        return "OR";
+    case 9:
+        return "XOR";
+    case 10:
+        return "HLT";
+    case 11:
+        return "RAMLOAD";
+    case 12:
+        return "RAMSTORE";
+    case 13:
+        return "MOVTOGR2";
+    case 14:
+        return "MOVTOGR3";
+    case 15:
+        return "GR2TOGR1";
+    case 16:
+        return "GR3TOGR1";
+    case 17:
+        return "W2MEMADDR";
+    case 18:
+        return "PUSH";
+    case 19:
+        return "POP";
+    case 20:
+        return "SETFLAGS";
+    case 21:
+        return "GETFLAGS";
+    case 22:
+        return "CALL";
+    case 23:
+        return "RET";
+    case 24:
+        return "JZ";
+    case 25:
+        return "GR1TOIXR";
+    case 26:
+        return "IXRTOGR1";
+    case 27:
+        return "MEMTAG";
+    case 28:
+        return "RAND";
+    case 29:
+        return "LDIREG";
+    case 30:
+        return "LFSH";
+    case 31:
+        return "RGSH";
+    case 32:
+        return "GETMEMST";
+    case 33:
+        return "BPTOREG";
+    default:
+        return "UNKNOWN";
+    }
+}

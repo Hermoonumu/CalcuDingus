@@ -1,6 +1,10 @@
 #include "programs.c"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#include "misc.c"
+
+// CPU
 // Structure:
 // A core featuring has three general registers: GR1, GR2 and GR3
 
@@ -104,6 +108,7 @@
 //  00000010 -- Performing a register immediate load
 //  00000020 -- Division by zero
 //  00000040 -- Cannot return from the base frame
+//  00000080 -- Invalid program (doesn't start witn NOP|program_size)
 
 enum State
 {
@@ -137,6 +142,7 @@ struct CPU
     unsigned int Operand2;
     unsigned int Payload;
     unsigned int DestReg;
+    unsigned int SrcReg;
 };
 
 void FetchInstruction(struct CPU *core)
@@ -152,6 +158,7 @@ void DecodeInstruction(struct CPU *core)
         core->Operand1 = (core->GR1);
         core->Operand2 = (core->GR2);
         core->DestReg = ((core->IR) & 0x00F00000) >> 20;
+        core->SrcReg = ((core->IR) & 0x000F0000) >> 16;
         core->Payload = (core->IR) & 0x000FFFFF;
         core->IR = ((core->IR) & 0xFF000000) >> 24;
     }
@@ -189,9 +196,9 @@ unsigned int *RegisterSelector(unsigned int reg, struct CPU *core)
     }
 }
 
-void LoadProgram(int PROGRAM[], int size, struct CPU *core)
+void LoadProgram(int PROGRAM[], struct CPU *core)
 {
-    for (int i = 0; i < size; i++)
+    for (int i = 0; i < PROGRAM[0]; i++)
     {
         if (i >= 4096)
         {
@@ -204,9 +211,19 @@ void LoadProgram(int PROGRAM[], int size, struct CPU *core)
 
 void ExecuteInstruction(struct CPU *core)
 {
+    if (core->PC - 1 == 0 && core->IR != NOP)
+    {
+        core->FLAGS = core->FLAGS | 0x00000080;
+        core->s = HALT;
+        return;
+    }
     switch (core->IR)
     {
     case NOP:
+        if (!(core->PC - 1))
+        {
+            core->PROGRAMEND = core->Payload;
+        }
         break;
     case JMP:
     {
@@ -349,7 +366,7 @@ void ExecuteInstruction(struct CPU *core)
             core->FLAGS = core->FLAGS | 0x00000008;
             break;
         }
-        if (core->MEMADDR & 0x00000FFF == 4095)
+        if ((core->MEMADDR & 0x00000FFF) == 4095)
         {
             core->FLAGS = core->FLAGS | 0x00000001;
         }
@@ -426,7 +443,7 @@ void ExecuteInstruction(struct CPU *core)
         unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
-            core->GR1 = core->RAM[core->SP];
+            // we're discarding the data then
             break;
         }
         *Dest = core->RAM[core->SP];
@@ -535,6 +552,7 @@ void ExecuteInstruction(struct CPU *core)
         unsigned int *Dest = RegisterSelector(core->DestReg, core);
         if (Dest == 0)
         {
+            srand(time(NULL));
             core->GR1 = rand();
             break;
         }
@@ -555,9 +573,16 @@ void ExecuteInstruction(struct CPU *core)
     case LFSH:
     {
         unsigned int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->SrcReg, core);
         if (Dest == 0)
         {
+
             core->GR1 = core->Operand1 << core->Payload;
+            break;
+        }
+        if (Src && Dest)
+        {
+            *Dest = *Dest << *Src;
             break;
         }
         *Dest = *Dest << core->Payload;
@@ -566,9 +591,16 @@ void ExecuteInstruction(struct CPU *core)
     case RGSH:
     {
         unsigned int *Dest = RegisterSelector(core->DestReg, core);
+        unsigned int *Src = RegisterSelector(core->SrcReg, core);
         if (Dest == 0)
         {
+
             core->GR1 = core->Operand1 >> core->Payload;
+            break;
+        }
+        if (Src && Dest)
+        {
+            *Dest = *Dest >> *Src;
             break;
         }
         *Dest = *Dest >> core->Payload;
@@ -610,7 +642,7 @@ int main()
     core.BP = 4090;
     core.SP = 4090;
 
-    LoadProgram(A_THROUGH_Z, sizeof(A_THROUGH_Z) / sizeof(int), &core);
+    LoadProgram(STRING_XOR_MTE_ENC, &core);
     while (core.s != HALT)
     {
         switch (core.s)
@@ -625,6 +657,9 @@ int main()
             break;
         case EXECUTE:
             ExecuteInstruction(&core);
+            /*printf("PC: %04d\t |OP: %s\t| GR1: %8X\t | GR2: %8X\t | GR3: %8X\t | IXR: %4d\t | SP: %4d\t | BP: %4d\t | FLAGS: %08X\t | MEMADDR: %08X\n",
+                   core.PC, GetOpcodeName(core.IR), core.GR1, core.GR2, core.GR3, core.IXR, core.SP, core.BP, core.FLAGS, core.MEMADDR);
+*/
             if (core.s != HALT)
             {
                 core.s = FETCH;
@@ -637,15 +672,13 @@ int main()
             core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
-        if (core.CLKCNT >= 2000)
+        if (core.CLKCNT >= 5000)
         {
             printf("The CPU overheated and exploded. You're dead now.");
             core.s = HALT;
         }
-        /*printf("PC: %04d | OP: 0x%02X | GR1: %8d | GR2: %8d | GR3: %8d | IXR: %4d | SP: %4d | BP: %4d | FLAGS: 0x%08X | MEMADDR: %04d\n",
-               core.PC, (core.IR >> 24) & 0xFF, core.GR1, core.GR2, core.GR3, core.IXR, core.SP, core.BP, core.FLAGS, core.MEMADDR);
-    */
     }
     putchar('\n');
+    int i = 0 / 0;
     return 0;
 }

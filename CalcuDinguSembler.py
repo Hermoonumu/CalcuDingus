@@ -32,7 +32,9 @@ OPCODES = {
     "LFSH": 30,
     "RGSH": 31,
     "GETMEMST": 32,
-    "BPTOREG": 33
+    "BPTOREG": 33,
+    "DLFSH": 30,
+    "DRGSH": 31
 }
 
 BARE_OPCODES = {
@@ -78,6 +80,11 @@ STACKED_OPCODES={
     "RGSH"
 }
 
+DOUBLE_REG_ARG_OPCODES={
+    "DLFSH",
+    "DRGSH"
+}
+
 TWO_CYCLE_INSTRUCTIONS = {
     "LDIREG"
 }
@@ -95,7 +102,7 @@ TWO_CYCLE_INSTRUCTIONS = {
 #JMP, CALL, JZ, WRTOMEMADDR, LFSH, RGSH 0xOPR00000
 
 output_file = open("machine.ohcp", "w")
-print("What are we translating to assembler: ")
+print("What are we translating to assembler: ", end='')
 name = input()
 two_cycle_instr_prog_offset_ctr=0
 instr_ctr=0
@@ -114,34 +121,42 @@ print(two_cycle_instr_prog_offset)
 
             
 with open(name) as f:
+    output_file.write(f"{OPCODES['NOP']<<24|instr_ctr+two_cycle_instr_prog_offset_ctr+1},\n")
     for line in f:
         line = line.split('//')[0].strip()
         if not line: continue 
         
         parts = line.split(' ')
         mnemonic = parts[0]
-        
         if mnemonic in OPCODES:
             instruction = OPCODES[mnemonic] << 24
             if mnemonic in BARE_OPCODES:
+                print(mnemonic)
                 pass
             
             if mnemonic in REG_OPCODES:
                 instruction |= int(parts[1], 0)<<20
+                print(mnemonic)
                 if mnemonic in TWO_CYCLE_INSTRUCTIONS:
                     output_file.write(f"{instruction},\n")
                     output_file.write(f"{int(parts[2])},\n")
                     continue
-
+            if mnemonic in DOUBLE_REG_ARG_OPCODES:
+                instruction |= int(parts[1], 0)<<20
+                instruction |= int(parts[2], 0)<<16
+                print(mnemonic)
+                output_file.write(f"{instruction},\n")
+                continue
             if mnemonic in STACKED_OPCODES:
+                print(mnemonic)
                 instruction |= int(parts[1], 0)<<20
                 if mnemonic in {"CALL", "JZ", "JMP"}:
-                    instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)]
+                    instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)]+1
                 else:
                     instruction |= int(parts[2], 0)
                 
             # Write as a decimal integer followed by a newline
             output_file.write(f"{instruction},\n")
-            
+
 
 output_file.close()
