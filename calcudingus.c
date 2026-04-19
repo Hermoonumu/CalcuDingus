@@ -776,7 +776,7 @@ int main()
             core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
-        if (core.CLKCNT >= 500)
+        if (core.CLKCNT >= 5000)
         {
             printf("The CPU overheated and exploded. You're dead now.");
             core.s = HALT;

@@ -64,14 +64,15 @@ RAMLOAD 3           // Loaded the argument to GR3
 
 GETMEMST 1          // Now we go to the start of the wild memory (right after the program code)
 WRTOMEMADDR 1 0 
-RAMSTORE 1
+RAMLOAD 1
 
 @CHECK_INIT         // In this part we check if we've ran malloc at all. If 2 MSB nibbles are not AE, then not. 
 LDIREG 2 2919235584 // our 0xAE000000 mask
 XOR 1
+RGSH 1 24
 GR1TOIXR
-JZ 0 0              // We go and allocate the memory because we've run malloc before. Zero for now, need to do AT malloc
-JUMP 0 @HEADER       // Otherwise we go make our header.
+JZ 0 @HEAP_TRAVERSAL    // We go and allocate the memory because we've run malloc before. Zero for now, need to do AT malloc
+JMP 0 @HEADER           // Otherwise we go make our header.
 
 
 @HEADER             // Sooo.. We need to construct an initial header. We'll also append 0xBEEFCAFE to the end of the heap
@@ -105,25 +106,52 @@ LDIREG 2 1
 ADD 1 //[65]
 RAND 2
 WRTOMEMADDR 1 0
+
+PUSH 1
+GR3TOGR1
+GR1TOIXR
+POP 1
+MEMTAG 3
+PUSH 3
+
 @LOOP_MALLOC
 MEMTAG 0
 PUSH 2
 LDIREG 2 1
 ADD 1
 PUSH 1
-GR3TOGR1
-PUSH 4 
-POP 2
-LDIREG 2 4095
-AND 1
-LDIREG 2 1
+IXRTOGR1
 SUB 1
 GR1TOIXR
 JZ 0 @INIT_DONE
+
+MOVTOGR3
 POP 1
 POP 2
 JMP 0 @LOOP_MALLOC
 
 
 @INIT_DONE
+PUSH 4
+POP 1
+LDIREG 2 1
+ADD 1
+WRTOMEMADDR 1 0
+LDIREG 1 3203386110
+RAMSTORE 1 0
+POP 0
+POP 0
+POP 1
 RET
+
+
+@HEAP_TRAVERSAL
+RAMLOAD 1
+LDIREG 2 1048320
+AND 1
+RGSH 1 8
+LDIREG 2 1
+ADD 1
+WRTOMEMADDR 1 0
+RAMLOAD 1
+JMP 0 @CHECK_INIT

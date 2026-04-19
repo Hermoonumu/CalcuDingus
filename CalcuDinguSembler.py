@@ -1,5 +1,4 @@
-from asyncio import sleep
-
+import sys
 
 OPCODES = {
     "NOP": 0,
@@ -105,12 +104,17 @@ TWO_CYCLE_INSTRUCTIONS = {
 #JMP, CALL, JZ, WRTOMEMADDR, LFSH, RGSH 0xOPR00000
 
 #We should implement some operation to jump to some parts of code, something like @HALT
-
-print("Machine code file name: ", end='')
-name = input()
-output_file = open(name, "w")
-print("What are we translating to assembler: ", end='')
-name = input()
+name = ""
+name_out=""
+if (len(sys.argv) > 1 and sys.argv[1]=="boot"):
+    name = "bootloader.hcp"
+    name_out = "bootloader.ohcp"
+else:
+    print("Machine code file name: ", end='')
+    name_out = input()
+    print("What are we translating to assembler: ", end='')
+    name = input()
+output_file = open(name_out, "w")
 two_cycle_instr_prog_offset_ctr=0
 prog_len=0
 two_cycle_instr_prog_offset={}
