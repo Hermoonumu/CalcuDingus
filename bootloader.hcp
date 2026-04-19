@@ -1,0 +1,129 @@
+BOOT
+JMP 0 @PRINT
+JMP 0 @MALLOC
+
+
+@PRINT
+BPTOREG 1
+LDIREG 2 3
+ADD 1
+WRTOMEMADDR 1 0
+RAMLOAD 1
+PUSH 1
+
+@LOOP
+WRTOMEMADDR 1 0
+RAMLOAD 1 //loading the word
+LDIREG 2 4278190080 //mask
+
+@LET_EXTR
+AND 3 //14
+PUSH 1
+GR3TOGR1
+GR1TOIXR
+JZ 0 @RET // ------------- RET EOL
+LDIREG 1 24
+DRGSH 3 1
+WRTOMEMADDR 0 4095
+RAMSTORE 3 //prints char
+POP 1
+LDIREG 3 8
+DLFSH 1 3
+PUSH 1
+GR1TOIXR
+JZ 0 @NEXT_WORD
+
+POP 1
+JMP 0 @LET_EXTR //30
+
+@NEXT_WORD
+POP 0
+POP 1
+LDIREG 2 1
+ADD 1
+PUSH 1
+WRTOMEMADDR 1 0
+JMP 0 @LOOP
+
+@RET
+RET //39
+
+
+
+
+
+
+
+
+@MALLOC             //MALLOC
+BPTOREG 1           // This part goes to look for a passed argument in stack. A number of words to reserve in heap.
+LDIREG 2 3
+ADD 1
+WRTOMEMADDR 1 0
+RAMLOAD 3           // Loaded the argument to GR3
+
+GETMEMST 1          // Now we go to the start of the wild memory (right after the program code)
+WRTOMEMADDR 1 0 
+RAMSTORE 1
+
+@CHECK_INIT         // In this part we check if we've ran malloc at all. If 2 MSB nibbles are not AE, then not. 
+LDIREG 2 2919235584 // our 0xAE000000 mask
+XOR 1
+GR1TOIXR
+JZ 0 0              // We go and allocate the memory because we've run malloc before. Zero for now, need to do AT malloc
+JUMP 0 @HEADER       // Otherwise we go make our header.
+
+
+@HEADER             // Sooo.. We need to construct an initial header. We'll also append 0xBEEFCAFE to the end of the heap
+LDIREG 1 0          // we clear GR1 to construct the header
+OR 1                // 0 or mask = mask with leading zeroes
+LDIREG 2 1048576
+OR 1                // We put 1 into the third nibble (so used)
+PUSH 1              // Some stack shenanigans to put our argument into GR2
+GR3TOGR1 
+MOVTOGR2
+POP 1
+OR 1                // Our header is almost complete. We need to put the address of the next header now.
+PUSH 1
+PUSH 2
+PUSH 4
+POP 1               // Register teleportation uuuu
+ADD 1
+MOVTOGR2
+POP 3
+POP 1
+LFSH 2 8
+OR 1                // OUR HEADER IS DONEEEEEEE, now we write it.
+RAMSTORE 1
+JMP 0 @INIT_HEAP
+
+
+@INIT_HEAP // Now that we have a header.. We need to initialize the heap (and tag the memory)
+PUSH 4 
+POP 1
+LDIREG 2 1
+ADD 1 //[65]
+RAND 2
+WRTOMEMADDR 1 0
+@LOOP_MALLOC
+MEMTAG 0
+PUSH 2
+LDIREG 2 1
+ADD 1
+PUSH 1
+GR3TOGR1
+PUSH 4 
+POP 2
+LDIREG 2 4095
+AND 1
+LDIREG 2 1
+SUB 1
+GR1TOIXR
+JZ 0 @INIT_DONE
+POP 1
+POP 2
+JMP 0 @LOOP_MALLOC
+
+
+@INIT_DONE
+RET

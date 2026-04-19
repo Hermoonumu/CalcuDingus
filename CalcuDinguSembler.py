@@ -1,3 +1,6 @@
+from asyncio import sleep
+
+
 OPCODES = {
     "NOP": 0,
     "JMP": 1,
@@ -101,33 +104,53 @@ TWO_CYCLE_INSTRUCTIONS = {
 #Opcodes that take all three
 #JMP, CALL, JZ, WRTOMEMADDR, LFSH, RGSH 0xOPR00000
 
-output_file = open("machine.ohcp", "w")
+#We should implement some operation to jump to some parts of code, something like @HALT
+
+print("Machine code file name: ", end='')
+name = input()
+output_file = open(name, "w")
 print("What are we translating to assembler: ", end='')
 name = input()
 two_cycle_instr_prog_offset_ctr=0
-instr_ctr=0
+prog_len=0
 two_cycle_instr_prog_offset={}
+JUMP_LOOKUP_TABL = dict()
+boot = False
 with open(name) as f:
     for line in f:
         line = line.split('//')[0].strip()
         if not line: continue
 
-        mnemonic = line.split(' ')[0]
-        two_cycle_instr_prog_offset[instr_ctr]=two_cycle_instr_prog_offset_ctr
-        if mnemonic in TWO_CYCLE_INSTRUCTIONS:
+        instr = line.split(' ')
+        two_cycle_instr_prog_offset[prog_len]=two_cycle_instr_prog_offset_ctr
+        if instr[0]=="BOOT":
+            boot = True
+            continue
+        if '@' in instr[0]:
+            JUMP_LOOKUP_TABL[instr[0][1:]] = prog_len+two_cycle_instr_prog_offset_ctr-1
+        if instr[0] in TWO_CYCLE_INSTRUCTIONS:
             two_cycle_instr_prog_offset_ctr+=1
-        instr_ctr+=1
-print(two_cycle_instr_prog_offset)
+        if instr[0] in OPCODES:
+            prog_len+=1
 
-            
+print(two_cycle_instr_prog_offset)
+print(JUMP_LOOKUP_TABL)
+
+BL_offset=0
 with open(name) as f:
-    output_file.write(f"{OPCODES['NOP']<<24|instr_ctr+two_cycle_instr_prog_offset_ctr+1},\n")
+    instr_ctr=-1
     for line in f:
         line = line.split('//')[0].strip()
         if not line: continue 
-        
         parts = line.split(' ')
         mnemonic = parts[0]
+        if mnemonic == "BOOT":
+            BL_offset=4096
+            instr_ctr+=1
+            continue
+        elif instr_ctr == -1 and mnemonic!="BOOT":
+            output_file.write(f"0x{(OPCODES['NOP']<<24|prog_len+two_cycle_instr_prog_offset_ctr+1):08X}\n")
+            instr_ctr+=1
         if mnemonic in OPCODES:
             instruction = OPCODES[mnemonic] << 24
             if mnemonic in BARE_OPCODES:
@@ -138,25 +161,33 @@ with open(name) as f:
                 instruction |= int(parts[1], 0)<<20
                 print(mnemonic)
                 if mnemonic in TWO_CYCLE_INSTRUCTIONS:
-                    output_file.write(f"{instruction},\n")
-                    output_file.write(f"{int(parts[2])},\n")
+                    output_file.write(f"0x{instruction:08X}\n")
+                    output_file.write(f"{int(parts[2])}\n")
                     continue
             if mnemonic in DOUBLE_REG_ARG_OPCODES:
                 instruction |= int(parts[1], 0)<<20
                 instruction |= int(parts[2], 0)<<16
                 print(mnemonic)
-                output_file.write(f"{instruction},\n")
+                output_file.write(f"0x{instruction:08X}\n")
                 continue
             if mnemonic in STACKED_OPCODES:
                 print(mnemonic)
                 instruction |= int(parts[1], 0)<<20
                 if mnemonic in {"CALL", "JZ", "JMP"}:
-                    instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)]+1
+                    if '@' in parts[2]:
+                        instruction |= JUMP_LOOKUP_TABL[parts[2][1:]]+BL_offset+1
+                    elif int(parts[2], 0) >= 4096 and boot:
+                        instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)-4096]+BL_offset
+                    elif int(parts[2], 0) >= 4096:
+                        instruction |= int(parts[2], 0)+BL_offset
+                    else: 
+                        instruction |= int(parts[2], 0)+two_cycle_instr_prog_offset[int(parts[2], 0)]+BL_offset
                 else:
                     instruction |= int(parts[2], 0)
                 
             # Write as a decimal integer followed by a newline
-            output_file.write(f"{instruction},\n")
+            output_file.write(f"0x{instruction:08X}\n")
+        instr_ctr+=1
 
 
 output_file.close()

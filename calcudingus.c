@@ -103,7 +103,7 @@
 //  00000000 -- nothing extraordinary
 //  00000001 -- Pending console output
 //  00000002 -- Popping attempt failed (stack empty)
-//  00000004 -- Tried overwriting the program
+//  00000004 -- Invalid Write
 //  00000008 -- MTE violation
 //  00000010 -- Performing a register immediate load
 //  00000020 -- Division by zero
@@ -118,6 +118,8 @@ enum State
     REGLOAD,
     HALT
 };
+
+int BOOTROM[4096];
 
 struct CPU
 {
@@ -147,8 +149,16 @@ struct CPU
 
 void FetchInstruction(struct CPU *core)
 {
-    core->IR = core->RAM[core->PC];
-    core->PC++;
+    if (core->PC / 4096)
+    {
+        core->IR = BOOTROM[core->PC % 4096];
+        core->PC++;
+    }
+    else
+    {
+        core->IR = core->RAM[core->PC % 4096];
+        core->PC++;
+    }
 }
 
 void DecodeInstruction(struct CPU *core)
@@ -196,17 +206,79 @@ unsigned int *RegisterSelector(unsigned int reg, struct CPU *core)
     }
 }
 
-void LoadProgram(int PROGRAM[], struct CPU *core)
+void MMU(struct CPU *core, int RW_Flag)
 {
-    for (int i = 0; i < PROGRAM[0]; i++)
+    unsigned int *Dest;
+    unsigned int *Src;
+    if (core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != ((unsigned int)core->MEMADDR & 0xFF000000) >> 24 &&
+        core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != 0)
     {
-        if (i >= 4096)
-        {
-            core->s = HALT;
-            break;
-        }
-        core->RAM[i] = PROGRAM[i];
+        core->FLAGS = core->FLAGS | 0x00000008;
+        return;
     }
+    if (RW_Flag)
+    {
+        Dest = &core->RAM[core->MEMADDR & 0x0000FFFF];
+        Src = RegisterSelector(core->DestReg, core);
+    }
+    else
+    {
+        Dest = RegisterSelector(core->DestReg, core);
+        Src = &core->RAM[core->MEMADDR & 0x0000FFFF];
+    }
+
+    if ((core->MEMADDR & 0x0000FFFF) == 4095)
+    {
+        core->FLAGS = core->FLAGS | 0x00000001;
+    }
+    if (((core->MEMADDR & 0x0000FFFF) < core->PROGRAMEND && RW_Flag) ||
+        ((core->MEMADDR & 0x0000FFFF) >= 4096 && core->PC < 4096))
+    {
+        core->FLAGS = core->FLAGS | 0x00000004;
+        return;
+    }
+    if (!Src)
+    {
+        *Dest = core->Payload;
+        return;
+    }
+    else if (!Dest)
+    {
+        core->GR1 = *Src;
+        return;
+    }
+    else
+    {
+        *Dest = *Src;
+    }
+    core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+    core->FLAGS = core->FLAGS & 0xFFFFFFFB;
+}
+
+// New and Improved Loader
+void LoadProgramFromFile(char *name, struct CPU *core, int BOOT)
+{
+    FILE *fp = fopen(name, "r");
+    if (!fp)
+        return; // Always check your pointers!
+
+    char buf[64]; // Plenty of room
+    int ctr = 0;
+    while (fgets(buf, sizeof(buf), fp) != NULL)
+    {
+        // strtoul handles the comma and newline automatically
+        unsigned int val = (unsigned int)strtoul(buf, NULL, 0);
+
+        if (BOOT)
+        {
+            BOOTROM[ctr++] = val;
+        }
+        else
+        {
+            core->RAM[ctr++] = val;
+        }
+    }
+    fclose(fp); // Don't forget to close the file!
 }
 
 void ExecuteInstruction(struct CPU *core)
@@ -341,50 +413,64 @@ void ExecuteInstruction(struct CPU *core)
         break;
     case RAMLOAD:
     {
-        unsigned int *Dest = RegisterSelector(core->DestReg, core);
-        if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
-            core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
-        {
-            core->FLAGS = core->FLAGS | 0x00000008;
-            break;
-        }
-        if (Dest == 0)
-        {
-            core->GR1 = core->RAM[core->MEMADDR & 0x00000FFF];
-            break;
-        }
-        *Dest = core->RAM[core->MEMADDR & 0x00000FFF];
-        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        MMU(core, 0);
         break;
     }
     case RAMSTORE:
     {
-        unsigned int *Src = RegisterSelector(core->DestReg, core);
-        if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
-            core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
-        {
-            core->FLAGS = core->FLAGS | 0x00000008;
-            break;
-        }
-        if ((core->MEMADDR & 0x00000FFF) == 4095)
-        {
-            core->FLAGS = core->FLAGS | 0x00000001;
-        }
-        if (core->MEMADDR & 0x00000FFF <= core->PROGRAMEND)
-        {
-            core->FLAGS = core->FLAGS | 0x00000004;
-            break;
-        }
-        if (Src == 0)
-        {
-            core->RAM[core->MEMADDR & 0x00000FFF] = core->Payload;
-            break;
-        }
-        core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
-        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
-        core->FLAGS = core->FLAGS & 0xFFFFFFFB;
+        MMU(core, 1);
         break;
     }
+
+        /*
+        case RAMLOAD:
+            {
+                unsigned int *Dest = RegisterSelector(core->DestReg, core);
+                if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
+                    core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
+                {
+                    core->FLAGS = core->FLAGS | 0x00000008;
+                    break;
+                }
+                if (Dest == 0)
+                {
+                    core->GR1 = core->RAM[core->MEMADDR & 0x00000FFF];
+                    break;
+                }
+                *Dest = core->RAM[core->MEMADDR & 0x00000FFF];
+                core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+                break;
+            }
+            case RAMSTORE:
+            {
+                unsigned int *Src = RegisterSelector(core->DestReg, core);
+                if (core->TAG_MEM[core->MEMADDR & 0x00000FFF] != (core->MEMADDR & 0xFF000000) >> 24 &&
+                    core->TAG_MEM[core->MEMADDR & 0x00000FFF] != 0)
+                {
+                    core->FLAGS = core->FLAGS | 0x00000008;
+                    break;
+                }
+                if ((core->MEMADDR & 0x00000FFF) == 4095)
+                {
+                    core->FLAGS = core->FLAGS | 0x00000001;
+                }
+                if ((core->MEMADDR & 0x00000FFF) <= core->PROGRAMEND)
+                {
+                    core->FLAGS = core->FLAGS | 0x00000004;
+                    break;
+                }
+                if (Src == 0)
+                {
+                    core->RAM[core->MEMADDR & 0x00000FFF] = core->Payload;
+                    break;
+                }
+                core->RAM[core->MEMADDR & 0x00000FFF] = *Src;
+                core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+                core->FLAGS = core->FLAGS & 0xFFFFFFFB;
+                break;
+            }
+        */
+
     case MOVTOGR2:
     {
         core->GR2 = core->GR1;
@@ -480,19 +566,19 @@ void ExecuteInstruction(struct CPU *core)
     }
     case CALL:
     {
-        int *Dest = RegisterSelector(core->DestReg, core);
+        int *Src = RegisterSelector(core->DestReg, core);
         core->RAM[core->SP] = core->PC;
         core->SP--;
         core->RAM[core->SP] = core->BP;
         core->SP--;
         core->BP = core->SP;
-        if (!Dest)
+        if (!Src)
         {
             core->PC = core->Payload;
         }
         else
         {
-            core->PC = *Dest;
+            core->PC = *Src;
         }
         core->FLAGS = core->FLAGS & 0xFFFFFFBF;
         break;
@@ -633,16 +719,29 @@ void ExecuteInstruction(struct CPU *core)
     }
 }
 
+void StackTrace(struct CPU *core)
+{
+    printf("STACK: |");
+    for (int i = 4090; i > core->SP; i--)
+    {
+        printf("%08X|", core->RAM[i]);
+    }
+    printf("\n");
+}
+
 int main()
 {
+    int DEBUG = 1;
+
     struct CPU core = {0}; // Our core
     core.s = FETCH;        // We manually set the state
 
     // Stack init
     core.BP = 4090;
     core.SP = 4090;
+    LoadProgramFromFile("bootloader.ohcp", &core, 1);
+    LoadProgramFromFile("machine.ohcp", &core, 0);
 
-    LoadProgram(STRING_XOR_MTE_ENC, &core);
     while (core.s != HALT)
     {
         switch (core.s)
@@ -657,9 +756,14 @@ int main()
             break;
         case EXECUTE:
             ExecuteInstruction(&core);
-            /*printf("PC: %04d\t |OP: %s\t| GR1: %8X\t | GR2: %8X\t | GR3: %8X\t | IXR: %4d\t | SP: %4d\t | BP: %4d\t | FLAGS: %08X\t | MEMADDR: %08X\n",
-                   core.PC, GetOpcodeName(core.IR), core.GR1, core.GR2, core.GR3, core.IXR, core.SP, core.BP, core.FLAGS, core.MEMADDR);
-*/
+            if (DEBUG)
+            {
+                printf("PC: %04d\t |OP: %s\t| GR1: %8X\t | GR2: %8X\t | GR3: %8X\t | IXR: %4d\t | SP: %4d\t | BP: %4d\t | FLAGS: %08X\t | MEMADDR: %08X\n",
+                       core.PC, GetOpcodeName(core.IR), core.GR1, core.GR2, core.GR3, core.IXR, core.SP, core.BP, core.FLAGS, core.MEMADDR);
+
+                StackTrace(&core);
+                printf("\n");
+            }
             if (core.s != HALT)
             {
                 core.s = FETCH;
@@ -672,7 +776,7 @@ int main()
             core.FLAGS = core.FLAGS & 0xFFFFFFFE;
         }
         core.CLKCNT++;
-        if (core.CLKCNT >= 5000)
+        if (core.CLKCNT >= 500)
         {
             printf("The CPU overheated and exploded. You're dead now.");
             core.s = HALT;
