@@ -210,8 +210,7 @@ void MMU(struct CPU *core, int RW_Flag)
 {
     unsigned int *Dest;
     unsigned int *Src;
-    if (core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != ((unsigned int)core->MEMADDR & 0xFF000000) >> 24 &&
-        core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != 0)
+    if (core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != ((unsigned int)core->MEMADDR & 0xFF000000) >> 24)
     {
         core->FLAGS = core->FLAGS | 0x00000008;
         return;
