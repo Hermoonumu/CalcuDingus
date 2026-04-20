@@ -1,0 +1,38 @@
+// Testing my malloc
+
+LDIREG 1 16
+PUSH 1          // Let's say I want 16 words in the heap
+CALL 0 4097     // Invoking malloc
+POP 0
+WRTOMEMADDR 1 0 // We write the address to perform some operations
+GR1TOIXR        // (and to our index register)
+
+// Let's put "Hello World!" there
+PUSH 1          // We put the address to the string in our stack as an argument
+
+LDIREG 1 1214606444
+LDIREG 2 1
+RAMSTORE 1
+IXRTOGR1
+ADD 1
+GR1TOIXR
+WRTOMEMADDR 1 0
+LDIREG 1 1864390511
+RAMSTORE 1
+IXRTOGR1
+ADD 1
+GR1TOIXR
+WRTOMEMADDR 1 0
+LDIREG 1 1919706145
+RAMSTORE 1
+
+// Now we call print syscall and see what happens
+CALL 0 4096
+
+
+// Now let's imagine the program wants to read someone else's memory
+LDIREG 1 100        // Let's say the "hacker" wants to read address 100
+WRTOMEMADDR 1 0     // We write the address to MEMADDR
+RAMLOAD 1           // This should raise MTE violation flag and forbid the read
+
+HLT                 // We're done!

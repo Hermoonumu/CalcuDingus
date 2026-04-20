@@ -109,6 +109,7 @@
 //  00000020 -- Division by zero
 //  00000040 -- Cannot return from the base frame
 //  00000080 -- Invalid program (doesn't start witn NOP|program_size)
+//  00000100 -- Kernel mode
 
 enum State
 {
@@ -171,6 +172,14 @@ void DecodeInstruction(struct CPU *core)
         core->SrcReg = ((core->IR) & 0x000F0000) >> 16;
         core->Payload = (core->IR) & 0x000FFFFF;
         core->IR = ((core->IR) & 0xFF000000) >> 24;
+        if (core->PC >= 4096)
+        {
+            core->FLAGS = core->FLAGS | 0x00000100;
+        }
+        else
+        {
+            core->FLAGS = core->FLAGS & 0xFFFFFEFF;
+        }
     }
     else
     {
@@ -210,9 +219,14 @@ void MMU(struct CPU *core, int RW_Flag)
 {
     unsigned int *Dest;
     unsigned int *Src;
-    if (core->TAG_MEM[core->MEMADDR & 0x0000FFFF] != ((unsigned int)core->MEMADDR & 0xFF000000) >> 24)
+    unsigned int physical_addr = core->MEMADDR & 0x0FFF;
+    unsigned int pointer_tag = core->MEMADDR >> 24;
+    unsigned int memory_tag = core->TAG_MEM[physical_addr];
+    int is_ring0 = (core->FLAGS & 0x100);
+
+    if ((memory_tag == 0 || memory_tag != pointer_tag) && !is_ring0)
     {
-        core->FLAGS = core->FLAGS | 0x00000008;
+        core->FLAGS |= 0x00000008;
         return;
     }
     if (RW_Flag)
@@ -240,18 +254,22 @@ void MMU(struct CPU *core, int RW_Flag)
     {
         *Dest = core->Payload;
         return;
+        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        core->FLAGS = core->FLAGS & 0xFFFFFFFB;
     }
     else if (!Dest)
     {
         core->GR1 = *Src;
         return;
+        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        core->FLAGS = core->FLAGS & 0xFFFFFFFB;
     }
     else
     {
         *Dest = *Src;
+        core->FLAGS = core->FLAGS & 0xFFFFFFF7;
+        core->FLAGS = core->FLAGS & 0xFFFFFFFB;
     }
-    core->FLAGS = core->FLAGS & 0xFFFFFFF7;
-    core->FLAGS = core->FLAGS & 0xFFFFFFFB;
 }
 
 // New and Improved Loader
@@ -730,7 +748,7 @@ void StackTrace(struct CPU *core)
 
 int main()
 {
-    int DEBUG = 1;
+    int DEBUG = 0;
 
     struct CPU core = {0}; // Our core
     core.s = FETCH;        // We manually set the state
